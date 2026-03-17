@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__brave_search__brave_web_search",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(lsof -i :5173)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(npm run build)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174/)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(/Users/georgy/dr-calculator/.gitignore:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
