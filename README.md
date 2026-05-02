@@ -1,4 +1,12 @@
-# React + Vite
+# Real Estate Quick UW
+
+Quick deal underwriting tool for DR real estate — STR, LTR, Development & Commercial.
+
+**Live prototype:** https://cashflow-code.github.io/real-estate-quick-uw/
+
+---
+
+## React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
