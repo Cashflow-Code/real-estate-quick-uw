@@ -17,7 +17,6 @@ const num = (v) => {
   return isFinite(n) ? n : 0
 }
 
-// monthly P&I payment for a fully-amortizing fixed-rate loan
 function monthlyPI(principal, annualRatePct, years) {
   const r = annualRatePct / 100 / 12
   const n = years * 12
@@ -26,7 +25,6 @@ function monthlyPI(principal, annualRatePct, years) {
   return (principal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
 }
 
-// remaining loan balance after `monthsPaid` months of fixed-rate amortization
 function loanBalance(principal, annualRatePct, years, monthsPaid) {
   const r = annualRatePct / 100 / 12
   const n = years * 12
@@ -55,7 +53,7 @@ function Field({ label, hint, children }) {
   )
 }
 
-function NumInput({ value, onChange, step = 1, min, prefix, suffix, placeholder }) {
+function NumInput({ value, onChange, step = 1, min, max, prefix, suffix, placeholder }) {
   return (
     <span className="num-wrap">
       {prefix ? <span className="affix">{prefix}</span> : null}
@@ -64,6 +62,7 @@ function NumInput({ value, onChange, step = 1, min, prefix, suffix, placeholder 
         value={value}
         step={step}
         min={min}
+        max={max}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -87,22 +86,25 @@ function DateInput({ value, onChange }) {
   return <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
 }
 
+const newUnit = () => ({ sqft: 1000, beds: 2, baths: 1, rent: 2200, rehabDowntimeMonths: 0 })
+const newComp = () => ({
+  address: '',
+  sale_price: 0,
+  sale_date: '',
+  sqft: 0,
+  distance: 0,
+  notes: '',
+})
+
 // ---------- main ----------
 export default function App() {
   // Subject
-  const [subject, setSubject] = useState({
-    address: '',
-    units: 2,
-    sqft: 2000,
-    beds: 4,
-    baths: 2,
-    notes: '',
-  })
+  const [subject, setSubject] = useState({ address: '', notes: '' })
+  const [units, setUnits] = useState([newUnit(), newUnit()])
 
-  // Comps
-  const [comps, setComps] = useState([
-    { address: '', sale_price: 0, sale_date: '', sqft: 0, distance: 0, notes: '' },
-  ])
+  // Comps — two sets: today (current condition) and after-repair (ARV)
+  const [compsToday, setCompsToday] = useState([newComp()])
+  const [compsARV, setCompsARV] = useState([newComp()])
 
   // Acquisition
   const [purchasePrice, setPurchasePrice] = useState(400000)
@@ -115,18 +117,20 @@ export default function App() {
   const [term, setTerm] = useState(30)
 
   // Income
-  const [unitRents, setUnitRents] = useState([2200, 2200, 0, 0])
   const [vacancyPct, setVacancyPct] = useState(5)
   const [otherIncomeMonthly, setOtherIncomeMonthly] = useState(0)
-  const [rehabDowntimeMonths, setRehabDowntimeMonths] = useState(0)
 
   // Operating expenses
   const [taxes, setTaxes] = useState(5000)
   const [insurance, setInsurance] = useState(1800)
   const [hoa, setHoa] = useState(0)
-  const [pmPct, setPmPct] = useState(8) // % of EGI
-  const [maintPct, setMaintPct] = useState(5) // % of EGI
-  const [utilitiesGrounds, setUtilitiesGrounds] = useState(0) // electricity, water, trash, lawn, snow
+  const [pmPct, setPmPct] = useState(8)
+  const [maintPct, setMaintPct] = useState(5)
+  const [electricity, setElectricity] = useState(0)
+  const [water, setWater] = useState(0)
+  const [trash, setTrash] = useState(0)
+  const [lawn, setLawn] = useState(0)
+  const [snow, setSnow] = useState(0)
   const [otherOpex, setOtherOpex] = useState(0)
 
   // Projections
@@ -140,9 +144,14 @@ export default function App() {
     dscr_min: 1.2,
     coc_min: 7,
     cap_spread_min: 1,
+    expense_ratio_max: 45,
   })
 
   // ---------- derived ----------
+  const totalSqft = units.reduce((a, u) => a + num(u.sqft), 0)
+  const totalBeds = units.reduce((a, u) => a + num(u.beds), 0)
+  const totalBaths = units.reduce((a, u) => a + num(u.baths), 0)
+
   const closingCosts = (purchasePrice * closingCostsPct) / 100
   const downPayment = (purchasePrice * downPct) / 100
   const loanAmount = purchasePrice - downPayment
@@ -151,17 +160,22 @@ export default function App() {
   const piMonthly = monthlyPI(loanAmount, rate, term)
   const annualDebtService = piMonthly * 12
 
-  const grossRentMonthly = unitRents.slice(0, subject.units).reduce((a, b) => a + num(b), 0)
+  const grossRentMonthly = units.reduce((a, u) => a + num(u.rent), 0)
   const grossRentAnnual = grossRentMonthly * 12
   const otherIncomeAnnual = otherIncomeMonthly * 12
   const gpi = grossRentAnnual + otherIncomeAnnual
   const vacancyLoss = (gpi * vacancyPct) / 100
-  const rehabDowntimeLoss = grossRentAnnual * (Math.max(0, num(rehabDowntimeMonths)) / 12)
+  // per-unit rehab downtime, capped at 12 months per unit
+  const rehabDowntimeLoss = units.reduce(
+    (a, u) => a + num(u.rent) * Math.min(12, Math.max(0, num(u.rehabDowntimeMonths))),
+    0
+  )
   const egi = gpi - vacancyLoss - rehabDowntimeLoss
 
   const pm = (egi * pmPct) / 100
   const maint = (egi * maintPct) / 100
-  const totalOpex = taxes + insurance + hoa + pm + maint + utilitiesGrounds + otherOpex
+  const utilitiesTotal = electricity + water + trash + lawn + snow
+  const totalOpex = taxes + insurance + hoa + pm + maint + utilitiesTotal + otherOpex
   const expenseRatio = egi > 0 ? totalOpex / egi : 0
 
   const noi = egi - totalOpex
@@ -174,6 +188,52 @@ export default function App() {
   const cocPass = cashOnCash * 100 >= thresholds.coc_min
   const cfPass = cashFlow > 0
   const capSpreadPass = capRate * 100 >= rate + thresholds.cap_spread_min
+  const expenseRatioPass = expenseRatio * 100 <= thresholds.expense_ratio_max
+
+  // Comp evaluation against current unit-mix totals
+  const evalComps = (arr) =>
+    arr.map((c) => {
+      const distOk = num(c.distance) <= 0.5
+      const dateOk = monthsAgo(c.sale_date) <= 6
+      const sizeOk =
+        totalSqft > 0 &&
+        num(c.sqft) > 0 &&
+        Math.abs(num(c.sqft) - totalSqft) / totalSqft <= 0.25
+      const ppsf = num(c.sale_price) && num(c.sqft) ? num(c.sale_price) / num(c.sqft) : 0
+      return { distOk, dateOk, sizeOk, ppsf, valid: distOk && dateOk && sizeOk }
+    })
+
+  const compResultsToday = evalComps(compsToday)
+  const validPpsfsToday = compResultsToday.filter((r) => r.valid && r.ppsf).map((r) => r.ppsf)
+  const avgPpsfToday =
+    validPpsfsToday.length > 0
+      ? validPpsfsToday.reduce((a, b) => a + b, 0) / validPpsfsToday.length
+      : 0
+  const impliedValueToday = avgPpsfToday * totalSqft
+  const validCountToday = compResultsToday.filter((r) => r.valid).length
+
+  const compResultsARV = evalComps(compsARV)
+  const validPpsfsARV = compResultsARV.filter((r) => r.valid && r.ppsf).map((r) => r.ppsf)
+  const avgPpsfARV =
+    validPpsfsARV.length > 0
+      ? validPpsfsARV.reduce((a, b) => a + b, 0) / validPpsfsARV.length
+      : 0
+  const impliedValueARV = avgPpsfARV * totalSqft
+  const validCountARV = compResultsARV.filter((r) => r.valid).length
+
+  const subjectPpsf = totalSqft > 0 ? purchasePrice / totalSqft : 0
+
+  // Sell after Year 1 (using ARV)
+  const arv = impliedValueARV > 0 ? impliedValueARV : 0
+  const arvSellingCosts = arv * (sellingCostsPct / 100)
+  const arvLoanBalance12 = loanBalance(loanAmount, rate, term, 12)
+  const arvNetSaleProceeds = arv - arvSellingCosts - arvLoanBalance12
+  const arvTotalReturn = cashFlow + arvNetSaleProceeds - cashInvested
+  const arvROI = cashInvested > 0 && arv > 0 ? arvTotalReturn / cashInvested : 0
+  const arvProfitable = arv > 0 && arvTotalReturn > 0
+  const arvEquityMultiple = cashInvested > 0 && arv > 0
+    ? (cashFlow + arvNetSaleProceeds) / cashInvested
+    : 0
 
   const projection = useMemo(() => {
     const rows = []
@@ -248,35 +308,103 @@ export default function App() {
   ]
   const totalSources = sources.reduce((a, b) => a + b.amount, 0)
 
-  const compResults = comps.map((c) => {
-    const distOk = num(c.distance) <= 0.5
-    const dateOk = monthsAgo(c.sale_date) <= 6
-    const sizeOk =
-      num(subject.sqft) > 0 &&
-      num(c.sqft) > 0 &&
-      Math.abs(num(c.sqft) - num(subject.sqft)) / num(subject.sqft) <= 0.25
-    const ppsf = num(c.sale_price) && num(c.sqft) ? num(c.sale_price) / num(c.sqft) : 0
-    return { distOk, dateOk, sizeOk, ppsf, valid: distOk && dateOk && sizeOk }
-  })
-  const validComps = compResults.filter((r) => r.valid)
-  const validPpsfs = compResults.filter((r) => r.valid && r.ppsf).map((r) => r.ppsf)
-  const avgPpsf =
-    validPpsfs.length > 0 ? validPpsfs.reduce((a, b) => a + b, 0) / validPpsfs.length : 0
-  const impliedValue = avgPpsf * num(subject.sqft)
-  const subjectPpsf = num(subject.sqft) > 0 ? purchasePrice / num(subject.sqft) : 0
+  // ---------- mutators ----------
+  const updateUnit = (i, patch) =>
+    setUnits((arr) => arr.map((u, idx) => (idx === i ? { ...u, ...patch } : u)))
+  const addUnit = () => setUnits((arr) => (arr.length >= 4 ? arr : [...arr, newUnit()]))
+  const removeUnit = (i) =>
+    setUnits((arr) => (arr.length <= 1 ? arr : arr.filter((_, idx) => idx !== i)))
 
-  const updateComp = (i, patch) =>
-    setComps((arr) => arr.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
-  const addComp = () =>
-    setComps((arr) => [
-      ...arr,
-      { address: '', sale_price: 0, sale_date: '', sqft: 0, distance: 0, notes: '' },
-    ])
-  const removeComp = (i) => setComps((arr) => arr.filter((_, idx) => idx !== i))
-  const updateRent = (i, val) =>
-    setUnitRents((arr) => arr.map((r, idx) => (idx === i ? num(val) : r)))
+  const compUpdater = (setter) => (i, patch) =>
+    setter((arr) => arr.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
+  const compAdder = (setter) => () => setter((arr) => [...arr, newComp()])
+  const compRemover = (setter) => (i) => setter((arr) => arr.filter((_, idx) => idx !== i))
+
+  const updateCompToday = compUpdater(setCompsToday)
+  const addCompToday = compAdder(setCompsToday)
+  const removeCompToday = compRemover(setCompsToday)
+  const updateCompARV = compUpdater(setCompsARV)
+  const addCompARV = compAdder(setCompsARV)
+  const removeCompARV = compRemover(setCompsARV)
+
   const updateYear = (i, patch) =>
     setYearly((arr) => arr.map((y, idx) => (idx === i ? { ...y, ...patch } : y)))
+
+  // ---------- comp table ----------
+  const renderCompTable = (comps, results, update, remove) => (
+    <div className="table-wrap">
+      <table className="comps">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Sale Price</th>
+            <th>Sale Date</th>
+            <th>Sqft</th>
+            <th>Distance (mi)</th>
+            <th>$/sqft</th>
+            <th>Dist</th>
+            <th>≤6mo</th>
+            <th>Size</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {comps.map((c, i) => {
+            const r = results[i]
+            return (
+              <tr key={i} className={r.valid ? 'comp-valid' : 'comp-invalid'}>
+                <td>
+                  <TextInput value={c.address} onChange={(v) => update(i, { address: v })} />
+                </td>
+                <td>
+                  <NumInput
+                    value={c.sale_price}
+                    onChange={(v) => update(i, { sale_price: num(v) })}
+                    prefix="$"
+                  />
+                </td>
+                <td>
+                  <DateInput
+                    value={c.sale_date}
+                    onChange={(v) => update(i, { sale_date: v })}
+                  />
+                </td>
+                <td>
+                  <NumInput value={c.sqft} onChange={(v) => update(i, { sqft: num(v) })} />
+                </td>
+                <td>
+                  <NumInput
+                    value={c.distance}
+                    step={0.1}
+                    onChange={(v) => update(i, { distance: num(v) })}
+                  />
+                </td>
+                <td className="mono">{r.ppsf ? fmtUSD(r.ppsf) : '—'}</td>
+                <td className={`check ${r.distOk ? 'pass' : 'fail'}`}>
+                  {r.distOk ? '✓' : '✗'}
+                </td>
+                <td className={`check ${r.dateOk ? 'pass' : 'fail'}`}>
+                  {r.dateOk ? '✓' : '✗'}
+                </td>
+                <td className={`check ${r.sizeOk ? 'pass' : 'fail'}`}>
+                  {r.sizeOk ? '✓' : '✗'}
+                </td>
+                <td>
+                  <TextInput value={c.notes} onChange={(v) => update(i, { notes: v })} />
+                </td>
+                <td>
+                  <button onClick={() => remove(i)} className="btn-x">
+                    ×
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <div className="app">
@@ -290,7 +418,7 @@ export default function App() {
       {/* SUBJECT PROPERTY */}
       <section>
         <h2>1. Subject Property</h2>
-        <div className="grid g-3">
+        <div className="grid g-2">
           <Field label="Address">
             <TextInput
               value={subject.address}
@@ -298,43 +426,69 @@ export default function App() {
               placeholder="123 Main St"
             />
           </Field>
-          <Field label="Units (1–4)">
-            <NumInput
-              value={subject.units}
-              min={1}
-              onChange={(v) =>
-                setSubject({ ...subject, units: Math.min(4, Math.max(1, num(v))) })
-              }
-            />
-          </Field>
-          <Field label="Square Feet">
-            <NumInput
-              value={subject.sqft}
-              onChange={(v) => setSubject({ ...subject, sqft: num(v) })}
-              suffix="sqft"
-            />
-          </Field>
-          <Field label="Bedrooms">
-            <NumInput
-              value={subject.beds}
-              onChange={(v) => setSubject({ ...subject, beds: num(v) })}
-            />
-          </Field>
-          <Field label="Bathrooms">
-            <NumInput
-              value={subject.baths}
-              step={0.5}
-              onChange={(v) => setSubject({ ...subject, baths: num(v) })}
+          <Field label="Notes">
+            <TextInput
+              value={subject.notes}
+              onChange={(v) => setSubject({ ...subject, notes: v })}
+              placeholder="features, condition, etc."
             />
           </Field>
         </div>
-        <Field label="Notes">
-          <TextInput
-            value={subject.notes}
-            onChange={(v) => setSubject({ ...subject, notes: v })}
-            placeholder="features, condition, etc."
-          />
-        </Field>
+
+        <div className="table-wrap">
+          <table className="unit-mix">
+            <thead>
+              <tr>
+                <th>Unit</th>
+                <th>Sqft</th>
+                <th>Bedrooms</th>
+                <th>Bathrooms</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {units.map((u, i) => (
+                <tr key={i}>
+                  <td>#{i + 1}</td>
+                  <td>
+                    <NumInput
+                      value={u.sqft}
+                      onChange={(v) => updateUnit(i, { sqft: num(v) })}
+                    />
+                  </td>
+                  <td>
+                    <NumInput
+                      value={u.beds}
+                      onChange={(v) => updateUnit(i, { beds: num(v) })}
+                    />
+                  </td>
+                  <td>
+                    <NumInput
+                      value={u.baths}
+                      step={0.5}
+                      onChange={(v) => updateUnit(i, { baths: num(v) })}
+                    />
+                  </td>
+                  <td>
+                    <button onClick={() => removeUnit(i)} className="btn-x">
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              <tr className="total">
+                <td>Total ({units.length})</td>
+                <td className="num">{totalSqft.toLocaleString()}</td>
+                <td className="num">{totalBeds}</td>
+                <td className="num">{totalBaths}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <button onClick={addUnit} className="btn" disabled={units.length >= 4}>
+          + Add Unit
+        </button>
       </section>
 
       {/* COMPARABLES */}
@@ -342,112 +496,63 @@ export default function App() {
         <h2>2. Comparables</h2>
         <p className="muted small">
           A comp validates if: within <strong>0.5 mi</strong>, sold within{' '}
-          <strong>6 months</strong>, and size within <strong>±25%</strong> of subject. Features
-          are noted, not validated.
+          <strong>6 months</strong>, and size within <strong>±25%</strong> of subject (
+          {totalSqft.toLocaleString()} sqft). Two sets: today's value (current condition) and
+          after-repair value (ARV).
         </p>
-        <div className="table-wrap">
-          <table className="comps">
-            <thead>
-              <tr>
-                <th>Address</th>
-                <th>Sale Price</th>
-                <th>Sale Date</th>
-                <th>Sqft</th>
-                <th>Distance (mi)</th>
-                <th>$/sqft</th>
-                <th>Dist</th>
-                <th>≤6mo</th>
-                <th>Size</th>
-                <th>Notes</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {comps.map((c, i) => {
-                const r = compResults[i]
-                return (
-                  <tr key={i} className={r.valid ? 'comp-valid' : 'comp-invalid'}>
-                    <td>
-                      <TextInput
-                        value={c.address}
-                        onChange={(v) => updateComp(i, { address: v })}
-                      />
-                    </td>
-                    <td>
-                      <NumInput
-                        value={c.sale_price}
-                        onChange={(v) => updateComp(i, { sale_price: num(v) })}
-                        prefix="$"
-                      />
-                    </td>
-                    <td>
-                      <DateInput
-                        value={c.sale_date}
-                        onChange={(v) => updateComp(i, { sale_date: v })}
-                      />
-                    </td>
-                    <td>
-                      <NumInput
-                        value={c.sqft}
-                        onChange={(v) => updateComp(i, { sqft: num(v) })}
-                      />
-                    </td>
-                    <td>
-                      <NumInput
-                        value={c.distance}
-                        step={0.1}
-                        onChange={(v) => updateComp(i, { distance: num(v) })}
-                      />
-                    </td>
-                    <td className="mono">{r.ppsf ? fmtUSD(r.ppsf) : '—'}</td>
-                    <td className={`check ${r.distOk ? 'pass' : 'fail'}`}>
-                      {r.distOk ? '✓' : '✗'}
-                    </td>
-                    <td className={`check ${r.dateOk ? 'pass' : 'fail'}`}>
-                      {r.dateOk ? '✓' : '✗'}
-                    </td>
-                    <td className={`check ${r.sizeOk ? 'pass' : 'fail'}`}>
-                      {r.sizeOk ? '✓' : '✗'}
-                    </td>
-                    <td>
-                      <TextInput
-                        value={c.notes}
-                        onChange={(v) => updateComp(i, { notes: v })}
-                      />
-                    </td>
-                    <td>
-                      <button onClick={() => removeComp(i)} className="btn-x">
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <button onClick={addComp} className="btn">
-          + Add Comp
+
+        <h3 className="sub">Today's Comparables (current condition)</h3>
+        {renderCompTable(compsToday, compResultsToday, updateCompToday, removeCompToday)}
+        <button onClick={addCompToday} className="btn">
+          + Add Today Comp
+        </button>
+
+        <h3 className="sub">After-Repair Comparables (ARV)</h3>
+        {renderCompTable(compsARV, compResultsARV, updateCompARV, removeCompARV)}
+        <button onClick={addCompARV} className="btn">
+          + Add ARV Comp
         </button>
 
         <div className="kpis">
           <div className="kpi">
-            <div className="kpi-label">Valid comps</div>
+            <div className="kpi-label">Today: valid / total</div>
             <div className="kpi-val">
-              {validComps.length} / {comps.length}
+              {validCountToday} / {compsToday.length}
             </div>
           </div>
           <div className="kpi">
-            <div className="kpi-label">Avg $/sqft (valid)</div>
-            <div className="kpi-val">{avgPpsf ? fmtUSD2(avgPpsf) : '—'}</div>
+            <div className="kpi-label">Today: avg $/sqft</div>
+            <div className="kpi-val">{avgPpsfToday ? fmtUSD2(avgPpsfToday) : '—'}</div>
           </div>
           <div className="kpi">
-            <div className="kpi-label">Implied subject value</div>
-            <div className="kpi-val">{impliedValue ? fmtUSD(impliedValue) : '—'}</div>
+            <div className="kpi-label">Implied today value</div>
+            <div className="kpi-val">{impliedValueToday ? fmtUSD(impliedValueToday) : '—'}</div>
           </div>
           <div className="kpi">
-            <div className="kpi-label">Subject $/sqft</div>
+            <div className="kpi-label">Subject $/sqft (at price)</div>
             <div className="kpi-val">{subjectPpsf ? fmtUSD2(subjectPpsf) : '—'}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">ARV: valid / total</div>
+            <div className="kpi-val">
+              {validCountARV} / {compsARV.length}
+            </div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">ARV: avg $/sqft</div>
+            <div className="kpi-val">{avgPpsfARV ? fmtUSD2(avgPpsfARV) : '—'}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">Implied ARV</div>
+            <div className="kpi-val">{impliedValueARV ? fmtUSD(impliedValueARV) : '—'}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-label">ARV uplift vs. price</div>
+            <div className="kpi-val">
+              {impliedValueARV
+                ? fmtUSD(impliedValueARV - purchasePrice)
+                : '—'}
+            </div>
           </div>
         </div>
       </section>
@@ -517,16 +622,59 @@ export default function App() {
       {/* INCOME */}
       <section>
         <h2>4. Income</h2>
-        <div className="grid g-4">
-          {Array.from({ length: subject.units }, (_, i) => (
-            <Field key={i} label={`Unit ${i + 1} rent (mo)`}>
-              <NumInput
-                value={unitRents[i]}
-                onChange={(v) => updateRent(i, v)}
-                prefix="$"
-              />
-            </Field>
-          ))}
+        <p className="muted small">
+          Rehab downtime is per unit (months with $0 rent in year 1, capped at 12).
+        </p>
+        <div className="table-wrap">
+          <table className="unit-mix">
+            <thead>
+              <tr>
+                <th>Unit</th>
+                <th>Monthly Rent</th>
+                <th>Rehab Downtime (mo, ≤12)</th>
+                <th>Year-1 rent loss</th>
+              </tr>
+            </thead>
+            <tbody>
+              {units.map((u, i) => {
+                const dt = Math.min(12, Math.max(0, num(u.rehabDowntimeMonths)))
+                const loss = num(u.rent) * dt
+                return (
+                  <tr key={i}>
+                    <td>#{i + 1}</td>
+                    <td>
+                      <NumInput
+                        value={u.rent}
+                        onChange={(v) => updateUnit(i, { rent: num(v) })}
+                        prefix="$"
+                      />
+                    </td>
+                    <td>
+                      <NumInput
+                        value={u.rehabDowntimeMonths}
+                        step={0.5}
+                        min={0}
+                        max={12}
+                        onChange={(v) =>
+                          updateUnit(i, {
+                            rehabDowntimeMonths: Math.min(12, Math.max(0, num(v))),
+                          })
+                        }
+                        suffix="mo"
+                      />
+                    </td>
+                    <td className="num">{fmtUSD(loss)}</td>
+                  </tr>
+                )
+              })}
+              <tr className="total">
+                <td>Total</td>
+                <td className="num">{fmtUSD(grossRentMonthly)}</td>
+                <td></td>
+                <td className="num">{fmtUSD(rehabDowntimeLoss)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         <div className="grid g-3">
           <Field label="Vacancy">
@@ -542,14 +690,6 @@ export default function App() {
               value={otherIncomeMonthly}
               onChange={(v) => setOtherIncomeMonthly(num(v))}
               prefix="$"
-            />
-          </Field>
-          <Field label="Rehab Downtime" hint="months with $0 rent during rehab">
-            <NumInput
-              value={rehabDowntimeMonths}
-              step={0.5}
-              onChange={(v) => setRehabDowntimeMonths(num(v))}
-              suffix="mo"
             />
           </Field>
         </div>
@@ -573,7 +713,7 @@ export default function App() {
                 <td className="num">−{fmtUSD(vacancyLoss)}</td>
               </tr>
               <tr>
-                <td>− Rehab Downtime ({rehabDowntimeMonths} mo)</td>
+                <td>− Rehab Downtime (per unit)</td>
                 <td className="num">−{fmtUSD(rehabDowntimeLoss)}</td>
               </tr>
               <tr className="total">
@@ -588,7 +728,7 @@ export default function App() {
       {/* OPERATING EXPENSES */}
       <section>
         <h2>5. Operating Expenses (annual)</h2>
-        <div className="grid g-3">
+        <div className="grid g-4 compact">
           <Field label="Property Taxes">
             <NumInput value={taxes} onChange={(v) => setTaxes(num(v))} prefix="$" />
           </Field>
@@ -606,7 +746,7 @@ export default function App() {
               suffix="% EGI"
             />
           </Field>
-          <Field label="Maintenance / Repairs" hint={`${fmtUSD(maint)} of EGI`}>
+          <Field label="Maint / Repairs" hint={`${fmtUSD(maint)} of EGI`}>
             <NumInput
               value={maintPct}
               step={0.5}
@@ -614,15 +754,20 @@ export default function App() {
               suffix="% EGI"
             />
           </Field>
-          <Field
-            label="Utilities & Grounds"
-            hint="electricity, water, trash, lawn, snow"
-          >
-            <NumInput
-              value={utilitiesGrounds}
-              onChange={(v) => setUtilitiesGrounds(num(v))}
-              prefix="$"
-            />
+          <Field label="Electricity">
+            <NumInput value={electricity} onChange={(v) => setElectricity(num(v))} prefix="$" />
+          </Field>
+          <Field label="Water">
+            <NumInput value={water} onChange={(v) => setWater(num(v))} prefix="$" />
+          </Field>
+          <Field label="Trash">
+            <NumInput value={trash} onChange={(v) => setTrash(num(v))} prefix="$" />
+          </Field>
+          <Field label="Lawn">
+            <NumInput value={lawn} onChange={(v) => setLawn(num(v))} prefix="$" />
+          </Field>
+          <Field label="Snow">
+            <NumInput value={snow} onChange={(v) => setSnow(num(v))} prefix="$" />
           </Field>
           <Field label="Other">
             <NumInput value={otherOpex} onChange={(v) => setOtherOpex(num(v))} prefix="$" />
@@ -652,8 +797,24 @@ export default function App() {
                 <td className="num">{fmtUSD(maint)}</td>
               </tr>
               <tr>
-                <td>Utilities & Grounds</td>
-                <td className="num">{fmtUSD(utilitiesGrounds)}</td>
+                <td>Electricity</td>
+                <td className="num">{fmtUSD(electricity)}</td>
+              </tr>
+              <tr>
+                <td>Water</td>
+                <td className="num">{fmtUSD(water)}</td>
+              </tr>
+              <tr>
+                <td>Trash</td>
+                <td className="num">{fmtUSD(trash)}</td>
+              </tr>
+              <tr>
+                <td>Lawn</td>
+                <td className="num">{fmtUSD(lawn)}</td>
+              </tr>
+              <tr>
+                <td>Snow</td>
+                <td className="num">{fmtUSD(snow)}</td>
               </tr>
               <tr>
                 <td>Other</td>
@@ -663,7 +824,7 @@ export default function App() {
                 <td>Total Operating Expenses</td>
                 <td className="num">{fmtUSD(totalOpex)}</td>
               </tr>
-              <tr className="total">
+              <tr className={`total ${expenseRatioPass ? 'pass' : 'fail'}`}>
                 <td>Expense Ratio (OpEx / EGI)</td>
                 <td className="num">{fmtPct(expenseRatio)}</td>
               </tr>
@@ -675,7 +836,7 @@ export default function App() {
       {/* THRESHOLDS */}
       <section>
         <h2>6. Thresholds</h2>
-        <div className="grid g-3">
+        <div className="grid g-4">
           <Field label="Min DSCR">
             <NumInput
               value={thresholds.dscr_min}
@@ -699,6 +860,14 @@ export default function App() {
               suffix="%"
             />
           </Field>
+          <Field label="Max Expense Ratio">
+            <NumInput
+              value={thresholds.expense_ratio_max}
+              step={1}
+              onChange={(v) => setThresholds({ ...thresholds, expense_ratio_max: num(v) })}
+              suffix="%"
+            />
+          </Field>
         </div>
       </section>
 
@@ -715,6 +884,10 @@ export default function App() {
               <tr>
                 <td>− Vacancy ({vacancyPct}%)</td>
                 <td className="num">−{fmtUSD(vacancyLoss)}</td>
+              </tr>
+              <tr>
+                <td>− Rehab Downtime (per unit)</td>
+                <td className="num">−{fmtUSD(rehabDowntimeLoss)}</td>
               </tr>
               <tr className="total">
                 <td>Effective Gross Income</td>
@@ -762,6 +935,13 @@ export default function App() {
             </div>
             <div className="kpi-val">{fmtNum(dscr)}</div>
           </div>
+          <div className={`kpi ${expenseRatioPass ? 'pass' : 'fail'}`}>
+            <div className="kpi-label">
+              Expense Ratio{' '}
+              <span className="muted small">(&lt; {thresholds.expense_ratio_max}%)</span>
+            </div>
+            <div className="kpi-val">{fmtPct(expenseRatio)}</div>
+          </div>
           <div className={`kpi ${cfPass ? 'pass' : 'fail'}`}>
             <div className="kpi-label">Cash Flow / mo</div>
             <div className="kpi-val">{fmtUSD(cashFlow / 12)}</div>
@@ -769,9 +949,77 @@ export default function App() {
         </div>
       </section>
 
+      {/* SELL AFTER YEAR 1 */}
+      <section>
+        <h2>8. Sell After Year 1 (using ARV)</h2>
+        <p className="muted small">
+          What if you sell at the end of year 1 at the after-repair value? Uses the implied ARV
+          from Section 2 ({impliedValueARV ? fmtUSD(impliedValueARV) : 'enter ARV comps'}),
+          year-1 cash flow, the loan balance after 12 payments, and selling costs.
+        </p>
+        {arv > 0 ? (
+          <>
+            <div className="table-wrap">
+              <table className="summary">
+                <tbody>
+                  <tr>
+                    <td>After-Repair Value (ARV)</td>
+                    <td className="num">{fmtUSD(arv)}</td>
+                  </tr>
+                  <tr>
+                    <td>− Selling Costs ({sellingCostsPct}%)</td>
+                    <td className="num">−{fmtUSD(arvSellingCosts)}</td>
+                  </tr>
+                  <tr>
+                    <td>− Loan Balance (after 12 mo)</td>
+                    <td className="num">−{fmtUSD(arvLoanBalance12)}</td>
+                  </tr>
+                  <tr className="total">
+                    <td>Net Sale Proceeds</td>
+                    <td className="num">{fmtUSD(arvNetSaleProceeds)}</td>
+                  </tr>
+                  <tr>
+                    <td>+ Year 1 Cash Flow</td>
+                    <td className="num">{fmtUSD(cashFlow)}</td>
+                  </tr>
+                  <tr>
+                    <td>− Cash Invested (Down + Closing + CapEx)</td>
+                    <td className="num">−{fmtUSD(cashInvested)}</td>
+                  </tr>
+                  <tr className={`total ${arvProfitable ? 'pass' : 'fail'}`}>
+                    <td>Profit / (Loss)</td>
+                    <td className="num">{fmtUSD(arvTotalReturn)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="kpis">
+              <div className={`kpi ${arvProfitable ? 'pass' : 'fail'}`}>
+                <div className="kpi-label">Profitable on sale?</div>
+                <div className="kpi-val">{arvProfitable ? 'Yes' : 'No'}</div>
+              </div>
+              <div className={`kpi ${arvProfitable ? 'pass' : 'fail'}`}>
+                <div className="kpi-label">ROI on sale</div>
+                <div className="kpi-val">{fmtPct(arvROI)}</div>
+              </div>
+              <div className={`kpi ${arvProfitable ? 'pass' : 'fail'}`}>
+                <div className="kpi-label">Equity Multiple</div>
+                <div className="kpi-val">{fmtNum(arvEquityMultiple)}x</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">ARV uplift over price</div>
+                <div className="kpi-val">{fmtUSD(arv - purchasePrice)}</div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="muted small">Add valid after-repair comparables in Section 2 to see the sale scenario.</p>
+        )}
+      </section>
+
       {/* PROJECTIONS */}
       <section>
-        <h2>8. 5-Year Projections</h2>
+        <h2>9. 5-Year Projections</h2>
         <p className="muted small">
           Each year column assumes a hypothetical sale at the end of that year. Adjust growth and
           appreciation per year.
@@ -960,13 +1208,18 @@ export default function App() {
 
       {/* SOURCES & USES */}
       <section>
-        <h2>9. Sources &amp; Uses</h2>
+        <h2>10. Sources &amp; Uses</h2>
         <div className="grid g-2">
           <div className="table-wrap">
             <table className="sources-uses">
               <thead>
                 <tr>
-                  <th colSpan={2}>Sources</th>
+                  <th colSpan={3}>Sources</th>
+                </tr>
+                <tr>
+                  <th></th>
+                  <th>Amount</th>
+                  <th>% of Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -974,11 +1227,15 @@ export default function App() {
                   <tr key={i}>
                     <td>{s.label}</td>
                     <td className="num">{fmtUSD(s.amount)}</td>
+                    <td className="num">
+                      {totalSources > 0 ? fmtPct(s.amount / totalSources, 1) : '—'}
+                    </td>
                   </tr>
                 ))}
                 <tr className="total">
                   <td>Total Sources</td>
                   <td className="num">{fmtUSD(totalSources)}</td>
+                  <td className="num">100.0%</td>
                 </tr>
               </tbody>
             </table>
@@ -987,7 +1244,12 @@ export default function App() {
             <table className="sources-uses">
               <thead>
                 <tr>
-                  <th colSpan={2}>Uses</th>
+                  <th colSpan={3}>Uses</th>
+                </tr>
+                <tr>
+                  <th></th>
+                  <th>Amount</th>
+                  <th>% of Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -995,11 +1257,15 @@ export default function App() {
                   <tr key={i}>
                     <td>{u.label}</td>
                     <td className="num">{fmtUSD(u.amount)}</td>
+                    <td className="num">
+                      {totalUses > 0 ? fmtPct(u.amount / totalUses, 1) : '—'}
+                    </td>
                   </tr>
                 ))}
                 <tr className="total">
                   <td>Total Uses</td>
                   <td className="num">{fmtUSD(totalUses)}</td>
+                  <td className="num">100.0%</td>
                 </tr>
               </tbody>
             </table>

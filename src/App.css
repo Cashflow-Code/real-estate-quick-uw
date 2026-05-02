@@ -34,6 +34,20 @@ section h2 {
   margin: 0 0 4px;
 }
 
+section h3.sub {
+  font-size: 13px;
+  margin: 8px 0 4px;
+  color: var(--text-h);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.grid.compact { gap: 8px; }
+.grid.compact .field { font-size: 12px; }
+.grid.compact input { font-size: 12px; padding: 4px 6px; }
+.grid.compact .affix { font-size: 11px; padding: 0 6px; }
+
 .muted {
   color: var(--text);
 }
