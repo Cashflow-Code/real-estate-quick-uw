@@ -226,8 +226,13 @@ td.check {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
+.kpis.k-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1024px) {
+  .kpis.k-5 { grid-template-columns: repeat(3, 1fr); }
+}
 @media (max-width: 768px) {
-  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .kpis,
+  .kpis.k-5 { grid-template-columns: repeat(2, 1fr); }
 }
 .kpi {
   border: 1px solid var(--border);

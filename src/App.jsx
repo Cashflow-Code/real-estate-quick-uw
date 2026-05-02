@@ -131,6 +131,7 @@ export default function App() {
   const [trash, setTrash] = useState(0)
   const [lawn, setLawn] = useState(0)
   const [snow, setSnow] = useState(0)
+  const [internet, setInternet] = useState(0)
   const [otherOpex, setOtherOpex] = useState(0)
 
   // Projections
@@ -144,6 +145,7 @@ export default function App() {
     dscr_min: 1.2,
     coc_min: 7,
     cap_spread_min: 1,
+    expense_ratio_min: 25,
     expense_ratio_max: 45,
   })
 
@@ -174,7 +176,7 @@ export default function App() {
 
   const pm = (egi * pmPct) / 100
   const maint = (egi * maintPct) / 100
-  const utilitiesTotal = electricity + water + trash + lawn + snow
+  const utilitiesTotal = electricity + water + trash + lawn + snow + internet
   const totalOpex = taxes + insurance + hoa + pm + maint + utilitiesTotal + otherOpex
   const expenseRatio = egi > 0 ? totalOpex / egi : 0
 
@@ -188,7 +190,10 @@ export default function App() {
   const cocPass = cashOnCash * 100 >= thresholds.coc_min
   const cfPass = cashFlow > 0
   const capSpreadPass = capRate * 100 >= rate + thresholds.cap_spread_min
-  const expenseRatioPass = expenseRatio * 100 <= thresholds.expense_ratio_max
+  const expenseRatioPct = expenseRatio * 100
+  const expenseRatioPass =
+    expenseRatioPct >= thresholds.expense_ratio_min &&
+    expenseRatioPct <= thresholds.expense_ratio_max
 
   // Comp evaluation against current unit-mix totals
   const evalComps = (arr) =>
@@ -770,6 +775,9 @@ export default function App() {
           <Field label="Snow">
             <NumInput value={snow} onChange={(v) => setSnow(num(v))} prefix="$" />
           </Field>
+          <Field label="Internet">
+            <NumInput value={internet} onChange={(v) => setInternet(num(v))} prefix="$" />
+          </Field>
           <Field label="Other">
             <NumInput value={otherOpex} onChange={(v) => setOtherOpex(num(v))} prefix="$" />
           </Field>
@@ -818,6 +826,10 @@ export default function App() {
                 <td className="num">{fmtUSD(snow)}</td>
               </tr>
               <tr>
+                <td>Internet</td>
+                <td className="num">{fmtUSD(internet)}</td>
+              </tr>
+              <tr>
                 <td>Other</td>
                 <td className="num">{fmtUSD(otherOpex)}</td>
               </tr>
@@ -837,7 +849,7 @@ export default function App() {
       {/* THRESHOLDS */}
       <section>
         <h2>6. Thresholds</h2>
-        <div className="grid g-4">
+        <div className="grid g-3">
           <Field label="Min DSCR">
             <NumInput
               value={thresholds.dscr_min}
@@ -858,6 +870,14 @@ export default function App() {
               value={thresholds.cap_spread_min}
               step={0.25}
               onChange={(v) => setThresholds({ ...thresholds, cap_spread_min: num(v) })}
+              suffix="%"
+            />
+          </Field>
+          <Field label="Min Expense Ratio">
+            <NumInput
+              value={thresholds.expense_ratio_min}
+              step={1}
+              onChange={(v) => setThresholds({ ...thresholds, expense_ratio_min: num(v) })}
               suffix="%"
             />
           </Field>
@@ -914,7 +934,7 @@ export default function App() {
           </table>
         </div>
 
-        <div className="kpis">
+        <div className="kpis k-5">
           <div className={`kpi ${capSpreadPass ? 'pass' : 'fail'}`}>
             <div className="kpi-label">
               Cap Rate{' '}
@@ -939,7 +959,9 @@ export default function App() {
           <div className={`kpi ${expenseRatioPass ? 'pass' : 'fail'}`}>
             <div className="kpi-label">
               Expense Ratio{' '}
-              <span className="muted small">(&lt; {thresholds.expense_ratio_max}%)</span>
+              <span className="muted small">
+                ({thresholds.expense_ratio_min}–{thresholds.expense_ratio_max}%)
+              </span>
             </div>
             <div className="kpi-val">{fmtPct(expenseRatio)}</div>
           </div>
