@@ -146,7 +146,7 @@ export default function App() {
     coc_min: 7,
     cap_spread_min: 1,
     expense_ratio_min: 25,
-    expense_ratio_max: 45,
+    expense_ratio_max: 40,
   })
 
   // ---------- derived ----------
@@ -282,6 +282,7 @@ export default function App() {
         propertyValue: propVal,
         loanBalance: balance,
         saleProceeds,
+        profit: totalReturn,
         totalROI,
         annualizedROI,
         equityMultiple,
@@ -849,7 +850,7 @@ export default function App() {
       {/* THRESHOLDS */}
       <section>
         <h2>6. Thresholds</h2>
-        <div className="grid g-3">
+        <div className="grid g-5">
           <Field label="Min DSCR">
             <NumInput
               value={thresholds.dscr_min}
@@ -1197,6 +1198,14 @@ export default function App() {
                 {projection.map((p) => (
                   <td key={p.year} className="num">
                     {fmtUSD(p.saleProceeds)}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>Profit (Cum. CF + Sale − Cash Invested)</td>
+                {projection.map((p) => (
+                  <td key={p.year} className={`num ${p.profit > 0 ? 'pass' : 'fail'}`}>
+                    {fmtUSD(p.profit)}
                   </td>
                 ))}
               </tr>
