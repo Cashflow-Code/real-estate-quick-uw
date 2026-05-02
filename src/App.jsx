@@ -86,7 +86,7 @@ function DateInput({ value, onChange }) {
   return <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
 }
 
-const newUnit = () => ({ sqft: 1000, beds: 2, baths: 1, rent: 2200, rehabDowntimeMonths: 0 })
+const newUnit = () => ({ sqft: 1000, beds: 2, baths: 1, rent: 2200, rehabDowntimeWeeks: 0 })
 const newComp = () => ({
   address: '',
   sale_price: 0,
@@ -165,9 +165,9 @@ export default function App() {
   const otherIncomeAnnual = otherIncomeMonthly * 12
   const gpi = grossRentAnnual + otherIncomeAnnual
   const vacancyLoss = (gpi * vacancyPct) / 100
-  // per-unit rehab downtime, capped at 12 months per unit
+  // per-unit rehab downtime in weeks of year 1 (0–52, capped at one year per unit)
   const rehabDowntimeLoss = units.reduce(
-    (a, u) => a + num(u.rent) * Math.min(12, Math.max(0, num(u.rehabDowntimeMonths))),
+    (a, u) => a + num(u.rent) * 12 * (Math.min(52, Math.max(0, num(u.rehabDowntimeWeeks))) / 52),
     0
   )
   const egi = gpi - vacancyLoss - rehabDowntimeLoss
@@ -623,7 +623,8 @@ export default function App() {
       <section>
         <h2>4. Income</h2>
         <p className="muted small">
-          Rehab downtime is per unit (months with $0 rent in year 1, capped at 12).
+          Rehab downtime is per unit in weeks the unit is offline during year 1 (0–52; a unit
+          cannot lose more than one year of rent).
         </p>
         <div className="table-wrap">
           <table className="unit-mix">
@@ -631,14 +632,14 @@ export default function App() {
               <tr>
                 <th>Unit</th>
                 <th>Monthly Rent</th>
-                <th>Rehab Downtime (mo, ≤12)</th>
+                <th>Rehab Downtime (weeks, ≤52)</th>
                 <th>Year-1 rent loss</th>
               </tr>
             </thead>
             <tbody>
               {units.map((u, i) => {
-                const dt = Math.min(12, Math.max(0, num(u.rehabDowntimeMonths)))
-                const loss = num(u.rent) * dt
+                const wk = Math.min(52, Math.max(0, num(u.rehabDowntimeWeeks)))
+                const loss = num(u.rent) * 12 * (wk / 52)
                 return (
                   <tr key={i}>
                     <td>#{i + 1}</td>
@@ -651,16 +652,16 @@ export default function App() {
                     </td>
                     <td>
                       <NumInput
-                        value={u.rehabDowntimeMonths}
-                        step={0.5}
+                        value={u.rehabDowntimeWeeks}
+                        step={1}
                         min={0}
-                        max={12}
+                        max={52}
                         onChange={(v) =>
                           updateUnit(i, {
-                            rehabDowntimeMonths: Math.min(12, Math.max(0, num(v))),
+                            rehabDowntimeWeeks: Math.min(52, Math.max(0, num(v))),
                           })
                         }
-                        suffix="mo"
+                        suffix="wk"
                       />
                     </td>
                     <td className="num">{fmtUSD(loss)}</td>
