@@ -193,6 +193,12 @@ td.check {
   font-weight: 700;
 }
 
+.projections td:first-child,
+.projections th:first-child {
+  min-width: 220px;
+  white-space: nowrap;
+}
+
 .comp-valid td:first-child {
   border-left: 3px solid #22a06b;
 }

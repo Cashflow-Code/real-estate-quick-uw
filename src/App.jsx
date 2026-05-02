@@ -96,7 +96,6 @@ export default function App() {
     sqft: 2000,
     beds: 4,
     baths: 2,
-    year_built: 1990,
     notes: '',
   })
 
@@ -119,6 +118,7 @@ export default function App() {
   const [unitRents, setUnitRents] = useState([2200, 2200, 0, 0])
   const [vacancyPct, setVacancyPct] = useState(5)
   const [otherIncomeMonthly, setOtherIncomeMonthly] = useState(0)
+  const [rehabDowntimeMonths, setRehabDowntimeMonths] = useState(0)
 
   // Operating expenses
   const [taxes, setTaxes] = useState(5000)
@@ -126,12 +126,12 @@ export default function App() {
   const [hoa, setHoa] = useState(0)
   const [pmPct, setPmPct] = useState(8) // % of EGI
   const [maintPct, setMaintPct] = useState(5) // % of EGI
-  const [utilities, setUtilities] = useState(0)
+  const [utilitiesGrounds, setUtilitiesGrounds] = useState(0) // electricity, water, trash, lawn, snow
   const [otherOpex, setOtherOpex] = useState(0)
 
   // Projections
   const [yearly, setYearly] = useState(
-    Array.from({ length: 5 }, () => ({ rent_growth: 3, expense_growth: 2, appreciation: 3 }))
+    Array.from({ length: 5 }, () => ({ rent_growth: 3, expense_growth: 3, appreciation: 3 }))
   )
   const [sellingCostsPct, setSellingCostsPct] = useState(6)
 
@@ -156,11 +156,13 @@ export default function App() {
   const otherIncomeAnnual = otherIncomeMonthly * 12
   const gpi = grossRentAnnual + otherIncomeAnnual
   const vacancyLoss = (gpi * vacancyPct) / 100
-  const egi = gpi - vacancyLoss
+  const rehabDowntimeLoss = grossRentAnnual * (Math.max(0, num(rehabDowntimeMonths)) / 12)
+  const egi = gpi - vacancyLoss - rehabDowntimeLoss
 
   const pm = (egi * pmPct) / 100
   const maint = (egi * maintPct) / 100
-  const totalOpex = taxes + insurance + hoa + pm + maint + utilities + otherOpex
+  const totalOpex = taxes + insurance + hoa + pm + maint + utilitiesGrounds + otherOpex
+  const expenseRatio = egi > 0 ? totalOpex / egi : 0
 
   const noi = egi - totalOpex
   const cashFlow = noi - annualDebtService
@@ -199,6 +201,9 @@ export default function App() {
       const equityMultiple = (cumCF + saleProceeds) / cashInvested
       const annualizedROI = Math.pow(1 + totalROI, 1 / (i + 1)) - 1
 
+      const yDscr = annualDebtService > 0 ? yNoi / annualDebtService : 0
+      const yCoc = cashInvested > 0 ? yCF / cashInvested : 0
+
       rows.push({
         year: i + 1,
         revenue: rev,
@@ -207,6 +212,8 @@ export default function App() {
         debtService: annualDebtService,
         cashFlow: yCF,
         cumCashFlow: cumCF,
+        dscr: yDscr,
+        coc: yCoc,
         propertyValue: propVal,
         loanBalance: balance,
         saleProceeds,
@@ -298,12 +305,6 @@ export default function App() {
               onChange={(v) =>
                 setSubject({ ...subject, units: Math.min(4, Math.max(1, num(v))) })
               }
-            />
-          </Field>
-          <Field label="Year Built">
-            <NumInput
-              value={subject.year_built}
-              onChange={(v) => setSubject({ ...subject, year_built: num(v) })}
             />
           </Field>
           <Field label="Square Feet">
@@ -543,6 +544,44 @@ export default function App() {
               prefix="$"
             />
           </Field>
+          <Field label="Rehab Downtime" hint="months with $0 rent during rehab">
+            <NumInput
+              value={rehabDowntimeMonths}
+              step={0.5}
+              onChange={(v) => setRehabDowntimeMonths(num(v))}
+              suffix="mo"
+            />
+          </Field>
+        </div>
+        <div className="table-wrap">
+          <table className="summary">
+            <tbody>
+              <tr>
+                <td>Gross Rent (annual)</td>
+                <td className="num">{fmtUSD(grossRentAnnual)}</td>
+              </tr>
+              <tr>
+                <td>+ Other Income</td>
+                <td className="num">{fmtUSD(otherIncomeAnnual)}</td>
+              </tr>
+              <tr>
+                <td>Gross Potential Income</td>
+                <td className="num">{fmtUSD(gpi)}</td>
+              </tr>
+              <tr>
+                <td>− Vacancy ({vacancyPct}%)</td>
+                <td className="num">−{fmtUSD(vacancyLoss)}</td>
+              </tr>
+              <tr>
+                <td>− Rehab Downtime ({rehabDowntimeMonths} mo)</td>
+                <td className="num">−{fmtUSD(rehabDowntimeLoss)}</td>
+              </tr>
+              <tr className="total">
+                <td>Effective Gross Income</td>
+                <td className="num">{fmtUSD(egi)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -575,12 +614,61 @@ export default function App() {
               suffix="% EGI"
             />
           </Field>
-          <Field label="Utilities">
-            <NumInput value={utilities} onChange={(v) => setUtilities(num(v))} prefix="$" />
+          <Field
+            label="Utilities & Grounds"
+            hint="electricity, water, trash, lawn, snow"
+          >
+            <NumInput
+              value={utilitiesGrounds}
+              onChange={(v) => setUtilitiesGrounds(num(v))}
+              prefix="$"
+            />
           </Field>
           <Field label="Other">
             <NumInput value={otherOpex} onChange={(v) => setOtherOpex(num(v))} prefix="$" />
           </Field>
+        </div>
+        <div className="table-wrap">
+          <table className="summary">
+            <tbody>
+              <tr>
+                <td>Property Taxes</td>
+                <td className="num">{fmtUSD(taxes)}</td>
+              </tr>
+              <tr>
+                <td>Insurance</td>
+                <td className="num">{fmtUSD(insurance)}</td>
+              </tr>
+              <tr>
+                <td>HOA</td>
+                <td className="num">{fmtUSD(hoa)}</td>
+              </tr>
+              <tr>
+                <td>Property Management ({pmPct}% EGI)</td>
+                <td className="num">{fmtUSD(pm)}</td>
+              </tr>
+              <tr>
+                <td>Maintenance / Repairs ({maintPct}% EGI)</td>
+                <td className="num">{fmtUSD(maint)}</td>
+              </tr>
+              <tr>
+                <td>Utilities & Grounds</td>
+                <td className="num">{fmtUSD(utilitiesGrounds)}</td>
+              </tr>
+              <tr>
+                <td>Other</td>
+                <td className="num">{fmtUSD(otherOpex)}</td>
+              </tr>
+              <tr className="total">
+                <td>Total Operating Expenses</td>
+                <td className="num">{fmtUSD(totalOpex)}</td>
+              </tr>
+              <tr className="total">
+                <td>Expense Ratio (OpEx / EGI)</td>
+                <td className="num">{fmtPct(expenseRatio)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -795,6 +883,28 @@ export default function App() {
                   </td>
                 ))}
               </tr>
+              <tr>
+                <td>DSCR (≥ {thresholds.dscr_min})</td>
+                {projection.map((p) => (
+                  <td
+                    key={p.year}
+                    className={`num ${p.dscr >= thresholds.dscr_min ? 'pass' : 'fail'}`}
+                  >
+                    {fmtNum(p.dscr)}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>Cash-on-Cash (≥ {thresholds.coc_min}%)</td>
+                {projection.map((p) => (
+                  <td
+                    key={p.year}
+                    className={`num ${p.coc * 100 >= thresholds.coc_min ? 'pass' : 'fail'}`}
+                  >
+                    {fmtPct(p.coc)}
+                  </td>
+                ))}
+              </tr>
               <tr className="sep">
                 <td>Property Value (sale)</td>
                 {projection.map((p) => (
@@ -856,27 +966,6 @@ export default function App() {
             <table className="sources-uses">
               <thead>
                 <tr>
-                  <th colSpan={2}>Uses</th>
-                </tr>
-              </thead>
-              <tbody>
-                {uses.map((u, i) => (
-                  <tr key={i}>
-                    <td>{u.label}</td>
-                    <td className="num">{fmtUSD(u.amount)}</td>
-                  </tr>
-                ))}
-                <tr className="total">
-                  <td>Total Uses</td>
-                  <td className="num">{fmtUSD(totalUses)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="table-wrap">
-            <table className="sources-uses">
-              <thead>
-                <tr>
                   <th colSpan={2}>Sources</th>
                 </tr>
               </thead>
@@ -890,6 +979,27 @@ export default function App() {
                 <tr className="total">
                   <td>Total Sources</td>
                   <td className="num">{fmtUSD(totalSources)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="table-wrap">
+            <table className="sources-uses">
+              <thead>
+                <tr>
+                  <th colSpan={2}>Uses</th>
+                </tr>
+              </thead>
+              <tbody>
+                {uses.map((u, i) => (
+                  <tr key={i}>
+                    <td>{u.label}</td>
+                    <td className="num">{fmtUSD(u.amount)}</td>
+                  </tr>
+                ))}
+                <tr className="total">
+                  <td>Total Uses</td>
+                  <td className="num">{fmtUSD(totalUses)}</td>
                 </tr>
               </tbody>
             </table>
